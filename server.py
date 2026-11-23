@@ -23,6 +23,10 @@ GITHUB_REPO = os.getenv("GITHUB_REPO", "").strip()  # formato: "usuario/reposito
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
 WEB_PIN = os.getenv("WEB_PIN", "").strip()
 
+# Variables de entorno adicionales para Webhook y Keep-Alive
+RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL", "").strip()
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "").strip() or RENDER_EXTERNAL_URL
+
 DB_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agenda.db")
 
 # Zona horaria de Venezuela: UTC-4
@@ -1247,8 +1251,48 @@ async def handle_telegram_message(msg: Dict[str, Any]):
     await telegram_send_message(chat_id, confirm_text, reply_markup=inline_actions)
 
 # ==========================================
-# CICLO DE POLLING DE TELEGRAM
+# WEBHOOK Y POLLING DE TELEGRAM
 # ==========================================
+async def telegram_webhook_handler(request: web.Request) -> web.Response:
+    try:
+        data = await request.json()
+        if "message" in data:
+            asyncio.create_task(handle_telegram_message(data["message"]))
+        elif "callback_query" in data:
+            asyncio.create_task(handle_telegram_callback(data["callback_query"]))
+        return web.Response(text="OK")
+    except Exception as e:
+        logger.error("Error en webhook de Telegram: %s", e)
+        return web.Response(text="Error", status=500)
+
+async def setup_telegram_connection(app: web.Application):
+    if not TELEGRAM_BOT_TOKEN:
+        logger.warning("TELEGRAM_BOT_TOKEN no configurado.")
+        return
+
+    # Si estamos en Render o tenemos URL pública configurada, usamos Webhook (despierta a Render al instante)
+    base_url = WEBHOOK_URL.rstrip("/")
+    if base_url:
+        hook_target = f"{base_url}/webhook"
+        logger.info("Configurando Webhook de Telegram en: %s", hook_target)
+        url_set = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook?url={hook_target}"
+        try:
+            async with aiohttp.ClientSession() as s:
+                async with s.get(url_set, timeout=15) as r:
+                    res = await r.json()
+                    logger.info("Resultado de setWebhook en Telegram: %s", res)
+        except Exception as e:
+            logger.error("Error configurando Webhook: %s", e)
+    else:
+        # Modo local o sin URL pública: eliminar webhook previo y usar polling
+        logger.info("No hay URL pública. Eliminando posibles webhooks y activando Polling...")
+        try:
+            async with aiohttp.ClientSession() as s:
+                await s.get(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/deleteWebhook", timeout=10)
+        except Exception:
+            pass
+        app["telegram_task"] = asyncio.create_task(telegram_polling_loop())
+
 async def telegram_polling_loop():
     logger.info("Iniciando loop de polling de Telegram...")
     offset = 0
@@ -1487,6 +1531,13 @@ async def api_backup_now(request: web.Request) -> web.Response:
         "status": backup_state["last_status"]
     })
 
+async def api_ping(request: web.Request) -> web.Response:
+    return web.json_response({
+        "status": "alive",
+        "vet_time": now_vet().strftime("%Y-%m-%d %H:%M:%S"),
+        "total_tasks": db_get_stats().get("total_pendientes", 0)
+    })
+
 async def serve_index(request: web.Request) -> web.Response:
     index_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "public", "index.html")
     if os.path.exists(index_path):
@@ -1506,8 +1557,8 @@ async def on_startup(app: web.Application):
     except Exception as e:
         logger.error("Error al restaurar al arrancar: %s", e)
 
-    # Iniciar polling de Telegram y scheduler en segundo plano
-    app["telegram_task"] = asyncio.create_task(telegram_polling_loop())
+    # Iniciar conexión con Telegram (Webhook si estamos en Render, o Polling si es local)
+    await setup_telegram_connection(app)
     app["scheduler_task"] = asyncio.create_task(background_scheduler())
 
 async def on_cleanup(app: web.Application):
@@ -1524,6 +1575,8 @@ def create_app() -> web.Application:
 
     # Rutas Web y API
     app.router.add_get("/", serve_index)
+    app.router.add_post("/webhook", telegram_webhook_handler)
+    app.router.add_get("/api/ping", api_ping)
     app.router.add_get("/api/tasks", api_get_tasks)
     app.router.add_post("/api/tasks", api_create_task)
     app.router.add_post("/api/tasks/{id}/toggle", api_toggle_task)
