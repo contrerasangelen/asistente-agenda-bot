@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="es" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Asistente Personal | Sala Situacional & Agenda</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eff6ff',
+              100: '#dbeafe',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8',
+              800: '#1e40af',
+              900: '#1e3a8a',
+            },
+            surface: {
+              DEFAULT: '#0f172a',
+              card: '#1e293b',
+              border: '#334155',
+              hover: '#273549'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    body { font-family: 'Inter', sans-serif; }
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: #0f172a; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 9999px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #475569; }
+  </style>
+</head>
+<body class="bg-[#0b0f19] text-slate-100 min-h-screen flex flex-col custom-scrollbar">
+
+  <!-- HEADER SUPERIOR -->
+  <header class="border-b border-surface-border bg-surface/90 backdrop-blur sticky top-0 z-30 px-4 lg:px-8 py-3.5">
+    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
+      
+      <!-- LOGO Y TÍTULO -->
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/20 text-white font-bold text-xl">
+          ⚡
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="font-bold text-lg text-white leading-tight">Asistente Operativo</h1>
+            <span class="px-2 py-0.5 rounded text-[11px] font-medium bg-blue-500/20 text-blue-400 border border-blue-500/30">VET UTC-4</span>
+          </div>
+          <p class="text-xs text-slate-400">Sala Situacional &bull; Transformadores &bull; Telegram Bot</p>
+        </div>
+      </div>
+
+      <!-- BOTONES DE ACCIÓN Y ESTADO DE RESPALDO -->
+      <div class="flex items-center flex-wrap gap-2.5">
+        <!-- Indicador de Respaldo GitHub -->
+        <div id="backup-badge-container" class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface-card border border-surface-border text-xs">
+          <span id="backup-dot" class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span class="text-slate-400">GitHub:</span>
+          <span id="backup-status-text" class="font-medium text-slate-200">Cargando...</span>
+          <span id="backup-time-text" class="text-[11px] text-slate-400 hidden sm:inline"></span>
+        </div>
+
+        <!-- Botón Forzar Respaldo -->
+        <button onclick="triggerManualBackup()" id="btn-backup" title="Guardar copia en GitHub rama backup-db"
+                class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-surface-border transition shadow-sm active:scale-95">
+          <svg id="backup-spinner" class="w-3.5 h-3.5 hidden animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+          </svg>
+          <span id="backup-icon">☁️</span>
+          <span>Respaldar BD</span>
+        </button>
+
+        <!-- Botón Nueva Tarea -->
+        <button onclick="openTaskModal()" 
+                class="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-lg shadow-blue-600/30 transition active:scale-95">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+          <span>Nueva Tarea</span>
+        </button>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- CONTENIDO PRINCIPAL -->
+  <main class="max-w-7xl mx-auto w-full px-4 lg:px-8 py-6 flex-1 space-y-6">
+
+    <!-- TARJETAS DE MÉTRICAS -->
+    <section class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      
+      <!-- Pendientes Hoy -->
+      <div onclick="switchTab('hoy')" class="cursor-pointer bg-surface-card hover:bg-surface-hover border border-surface-border p-4 rounded-xl transition group">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-medium text-slate-400 uppercase tracking-wider">Hoy</span>
+          <span class="p-2 rounded-lg bg-blue-500/10 text-blue-400 text-sm">📅</span>
+        </div>
+        <div class="mt-2 flex items-baseline gap-2">
+          <span id="stat-hoy" class="text-2xl font-bold text-white group-hover:text-blue-400 transition">0</span>
+          <span class="text-xs text-slate-400">para hoy</span>
+        </div>
+      </div>
+
+      <!-- Atrasados -->
+      <div onclick="switchTab('hoy')" class="cursor-pointer bg-surface-card hover:bg-surface-hover border border-surface-border p-4 rounded-xl transition group">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-medium text-slate-400 uppercase tracking-wider">Atrasados</span>
+          <span class="p-2 rounded-lg bg-rose-500/10 text-rose-400 text-sm">⚠️</span>
+        </div>
+        <div class="mt-2 flex items-baseline gap-2">
+          <span id="stat-atrasados" class="text-2xl font-bold text-rose-400">0</span>
+          <span class="text-xs text-slate-400">requieren atención</span>
+        </div>
+      </div>
+
+      <!-- Ideas -->
+      <div onclick="switchTab('ideas')" class="cursor-pointer bg-surface-card hover:bg-surface-hover border border-surface-border p-4 rounded-xl transition group">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-medium text-slate-400 uppercase tracking-wider">Ideas</span>
+          <span class="p-2 rounded-lg bg-amber-500/10 text-amber-400 text-sm">💡</span>
+        </div>
+        <div class="mt-2 flex items-baseline gap-2">
+          <span id="stat-ideas" class="text-2xl font-bold text-amber-300">0</span>
+          <span class="text-xs text-slate-400">registradas</span>
+        </div>
+      </div>
+
+      <!-- Completados Hoy -->
+      <div onclick="switchTab('completados')" class="cursor-pointer bg-surface-card hover:bg-surface-hover border border-surface-border p-4 rounded-xl transition group">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-medium text-slate-400 uppercase tracking-wider">Completados</span>
+          <span class="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 text-sm">✅</span>
+        </div>
+        <div class="mt-2 flex items-baseline gap-2">
+          <span id="stat-completados" class="text-2xl font-bold text-emerald-400">0</span>
+          <span class="text-xs text-slate-400">hoy</span>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- BARRA DE PESTAÑAS Y BÚSQUEDA -->
+    <div class="bg-surface-card border border-surface-border rounded-xl p-3 sm:p-4 space-y-3">
+      <div class="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+        
+        <!-- Pestañas -->
+        <nav class="flex items-center overflow-x-auto space-x-1 border-b md:border-b-0 border-surface-border pb-2 md:pb-0 custom-scrollbar text-xs sm:text-sm font-medium">
+          <button onclick="switchTab('hoy')" id="tab-btn-hoy" 
+                  class="tab-btn px-3.5 py-1.5 rounded-lg bg-blue-600 text-white transition whitespace-nowrap">
+            📅 Hoy
+          </button>
+          <button onclick="switchTab('todos')" id="tab-btn-todos" 
+                  class="tab-btn px-3.5 py-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition whitespace-nowrap">
+            📋 Todos los Pendientes
+          </button>
+          <button onclick="switchTab('ideas')" id="tab-btn-ideas" 
+                  class="tab-btn px-3.5 py-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition whitespace-nowrap">
+            💡 Ideas
+          </button>
+          <button onclick="switchTab('completados')" id="tab-btn-completados" 
+                  class="tab-btn px-3.5 py-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition whitespace-nowrap">
+            ✅ Completados
+          </button>
+        </nav>
+
+        <!-- Filtros y Buscador -->
+        <div class="flex items-center gap-2">
+          <!-- Filtro Categoría -->
+          <select id="filter-category" onchange="renderCurrentView()" 
+                  class="bg-slate-900 border border-surface-border text-xs rounded-lg px-2.5 py-1.5 text-slate-300 focus:outline-none focus:border-blue-500">
+            <option value="all">Todas las categorías</option>
+            <option value="Sala">⚡ Sala Situacional</option>
+            <option value="Equipos/Tx">🔌 Equipos/Tx</option>
+            <option value="Personal">👤 Personal</option>
+            <option value="Ideas">💡 Ideas</option>
+          </select>
+
+          <!-- Input Buscador -->
+          <div class="relative w-full sm:w-48">
+            <input type="text" id="search-input" oninput="renderCurrentView()" placeholder="Buscar pendiente..."
+                   class="w-full bg-slate-900 border border-surface-border rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500">
+            <svg class="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+            </svg>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- LISTADO DE TAREAS -->
+    <div id="tasks-container" class="space-y-2.5">
+      <!-- Se llena dinámicamente con JS -->
+      <div class="text-center py-12 text-slate-500 text-sm">
+        Cargando pendientes...
+      </div>
+    </div>
+
+  </main>
+
+  <!-- MODAL CREAR / EDITAR TAREA -->
+  <div id="task-modal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-surface-card border border-surface-border rounded-2xl max-w-lg w-full p-5 sm:p-6 shadow-2xl relative space-y-4">
+      <div class="flex items-center justify-between pb-3 border-b border-surface-border">
+        <h3 id="modal-title" class="text-base font-bold text-white">Nueva Tarea</h3>
+        <button onclick="closeTaskModal()" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition">
+          ✕
+        </button>
+      </div>
+
+      <form id="task-form" onsubmit="handleTaskSubmit(event)" class="space-y-3.5">
+        <input type="hidden" id="task-edit-id" value="">
+
+        <div>
+          <label class="block text-xs font-medium text-slate-300 mb-1">Título / Acción *</label>
+          <input type="text" id="form-title" required placeholder="Ej: Revisar termografía Tx 2 Subestación..."
+                 class="w-full bg-slate-900 border border-surface-border rounded-xl px-3.5 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500">
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-slate-300 mb-1">Categoría</label>
+            <select id="form-category" class="w-full bg-slate-900 border border-surface-border rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500">
+              <option value="Sala">⚡ Sala Situacional</option>
+              <option value="Equipos/Tx">🔌 Equipos / Tx</option>
+              <option value="Personal" selected>👤 Personal</option>
+              <option value="Ideas">💡 Ideas</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-xs font-medium text-slate-300 mb-1">Prioridad</label>
+            <select id="form-priority" class="w-full bg-slate-900 border border-surface-border rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500">
+              <option value="Normal" selected>Normal</option>
+              <option value="Alta">🔴 Alta (Urgente)</option>
+              <option value="Baja">Baja</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-slate-300 mb-1">Fecha Vencimiento (opcional)</label>
+            <input type="date" id="form-due-date"
+                   class="w-full bg-slate-900 border border-surface-border rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-300 mb-1">Recordatorio VET (opcional)</label>
+            <input type="datetime-local" id="form-reminder-at"
+                   class="w-full bg-slate-900 border border-surface-border rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500">
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-slate-300 mb-1">Notas / Detalles adicionales</label>
+          <textarea id="form-description" rows="2" placeholder="Detalles de circuito, carga en MW, equipo..."
+                    class="w-full bg-slate-900 border border-surface-border rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"></textarea>
+        </div>
+
+        <div class="pt-2 flex items-center justify-end gap-2 border-t border-surface-border">
+          <button type="button" onclick="closeTaskModal()" 
+                  class="px-4 py-2 rounded-xl text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 transition">
+            Cancelar
+          </button>
+          <button type="submit" 
+                  class="px-5 py-2 rounded-xl text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/30 transition">
+            Guardar
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICACIONES -->
+  <div id="toast" class="fixed bottom-5 right-5 z-50 transform translate-y-16 opacity-0 transition-all duration-300 bg-slate-800 border border-slate-700 text-white px-4 py-2.5 rounded-xl shadow-2xl flex items-center gap-2 text-xs">
+    <span id="toast-icon">✅</span>
+    <span id="toast-msg">Operación exitosa</span>
+  </div>
+
+  <!-- FOOTER -->
+  <footer class="border-t border-surface-border py-4 px-4 text-center text-xs text-slate-500">
+    Asistente Personal de Operaciones &bull; Sincronización en tiempo real con Telegram y persistencia automática en GitHub.
+  </footer>
+
+  <!-- LÓGICA JAVASCRIPT -->
+  <script>
+    let currentTab = 'hoy';
+    let tasksList = [];
+    let statsData = {};
+
+    const categoryConfig = {
+      'Sala': { icon: '⚡', name: 'Sala Situacional', badgeClass: 'bg-blue-500/10 text-blue-400 border-blue-500/20' },
+      'Equipos/Tx': { icon: '🔌', name: 'Equipos/Tx', badgeClass: 'bg-amber-500/10 text-amber-400 border-amber-500/20' },
+      'Personal': { icon: '👤', name: 'Personal', badgeClass: 'bg-purple-500/10 text-purple-400 border-purple-500/20' },
+      'Ideas': { icon: '💡', name: 'Ideas', badgeClass: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' }
+    };
+
+    function showToast(message, icon = '✅') {
+      const toast = document.getElementById('toast');
+      document.getElementById('toast-msg').textContent = message;
+      document.getElementById('toast-icon').textContent = icon;
+      toast.classList.remove('translate-y-16', 'opacity-0');
+      setTimeout(() => {
+        toast.classList.add('translate-y-16', 'opacity-0');
+      }, 3500);
+    }
+
+    async function fetchStats() {
+      try {
+        const res = await fetch('/api/stats');
+        const data = await res.json();
+        if (data.success) {
+          statsData = data.stats;
+          document.getElementById('stat-hoy').textContent = statsData.pendientes_hoy || 0;
+          document.getElementById('stat-atrasados').textContent = statsData.atrasados || 0;
+          document.getElementById('stat-ideas').textContent = statsData.ideas || 0;
+          document.getElementById('stat-completados').textContent = statsData.completados_hoy || 0;
+        }
+      } catch (e) {
+        console.error('Error stats:', e);
+      }
+    }
+
+    async function fetchBackupStatus() {
+      try {
+        const res = await fetch('/api/backup_status');
+        const data = await res.json();
+        if (data.success) {
+          const b = data.backup;
+          const statusText = document.getElementById('backup-status-text');
+          const timeText = document.getElementById('backup-time-text');
+          const dot = document.getElementById('backup-dot');
+
+          statusText.textContent = b.last_status;
+          if (b.last_backup_str && b.last_backup_str !== 'Nunca') {
+            timeText.textContent = `(${b.last_backup_str})`;
+          }
+
+          if (b.in_progress) {
+            dot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400 animate-spin';
+          } else if (b.last_status.includes('Al día')) {
+            dot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400';
+          } else if (b.last_status.includes('Error')) {
+            dot.className = 'w-2.5 h-2.5 rounded-full bg-rose-500';
+          } else {
+            dot.className = 'w-2.5 h-2.5 rounded-full bg-blue-400 animate-pulse';
+          }
+        }
+      } catch (e) {
+        console.error('Error backup status:', e);
+      }
+    }
+
+    async function triggerManualBackup() {
+      const btn = document.getElementById('btn-backup');
+      const spinner = document.getElementById('backup-spinner');
+      const icon = document.getElementById('backup-icon');
+
+      btn.disabled = true;
+      spinner.classList.remove('hidden');
+      icon.classList.add('hidden');
+
+      try {
+        const res = await fetch('/api/backup_now', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          showToast(data.message, '☁️');
+        } else {
+          showToast('Error: ' + data.message, '⚠️');
+        }
+        await fetchBackupStatus();
+      } catch (e) {
+        showToast('Error de conexión con el servidor', '❌');
+      } finally {
+        btn.disabled = false;
+        spinner.classList.add('hidden');
+        icon.classList.remove('hidden');
+      }
+    }
+
+    async function loadTasks() {
+      try {
+        const res = await fetch('/api/tasks');
+        const data = await res.json();
+        if (data.success) {
+          tasksList = data.tasks;
+          renderCurrentView();
+        }
+      } catch (e) {
+        console.error('Error cargando tareas:', e);
+      }
+    }
+
+    function switchTab(tab) {
+      currentTab = tab;
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.className = 'tab-btn px-3.5 py-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition whitespace-nowrap';
+      });
+      const activeBtn = document.getElementById(`tab-btn-${tab}`);
+      if (activeBtn) {
+        activeBtn.className = 'tab-btn px-3.5 py-1.5 rounded-lg bg-blue-600 text-white transition whitespace-nowrap';
+      }
+      renderCurrentView();
+    }
+
+    function renderCurrentView() {
+      const container = document.getElementById('tasks-container');
+      const categoryFilter = document.getElementById('filter-category').value;
+      const search = document.getElementById('search-input').value.toLowerCase().trim();
+
+      // Fecha local de hoy en VET aproximada
+      const today = new Date().toISOString().split('T')[0];
+
+      let filtered = tasksList.filter(t => {
+        // Filtro por categoría
+        if (categoryFilter !== 'all' && t.category !== categoryFilter) return false;
+
+        // Filtro por búsqueda
+        if (search) {
+          const matchTitle = t.title.toLowerCase().includes(search);
+          const matchDesc = (t.description || '').toLowerCase().includes(search);
+          if (!matchTitle && !matchDesc) return false;
+        }
+
+        // Filtro por Tab
+        if (currentTab === 'hoy') {
+          if (t.status !== 'pending' || t.category === 'Ideas') return false;
+          const isTodayDue = t.due_date === today;
+          const isTodayReminder = t.reminder_at && t.reminder_at.startsWith(today);
+          const isPastDue = (t.due_date && t.due_date < today) || (t.reminder_at && t.reminder_at < today);
+          const isNoDate = !t.due_date && !t.reminder_at && t.created_at.startsWith(today);
+          return isTodayDue || isTodayReminder || isPastDue || isNoDate;
+        } else if (currentTab === 'todos') {
+          return t.status === 'pending';
+        } else if (currentTab === 'ideas') {
+          return t.category === 'Ideas' && t.status === 'pending';
+        } else if (currentTab === 'completados') {
+          return t.status === 'done';
+        }
+        return true;
+      });
+
+      if (filtered.length === 0) {
+        container.innerHTML = `
+          <div class="bg-surface-card border border-surface-border rounded-xl p-10 text-center text-slate-400 space-y-2">
+            <span class="text-3xl">🎉</span>
+            <p class="font-medium text-slate-200">No hay pendientes en esta vista.</p>
+            <p class="text-xs text-slate-500">Puedes crear una nueva tarea arriba o enviar un mensaje por Telegram.</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = filtered.map(t => {
+        const isDone = t.status === 'done';
+        const catInfo = categoryConfig[t.category] || { icon: '📌', name: t.category, badgeClass: 'bg-slate-700 text-slate-300' };
+        const isHighPrio = t.priority === 'Alta';
+
+        let reminderBadge = '';
+        if (t.reminder_at) {
+          const isOverdue = t.reminder_at < new Date().toISOString() && !isDone;
+          reminderBadge = `
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] ${isOverdue ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' : 'bg-slate-800 text-slate-300 border border-slate-700'}">
+              ⏰ ${t.reminder_at.substring(5, 16)}
+            </span>
+          `;
+        }
+
+        const sourceIcon = t.source === 'telegram_voice' ? '🎙️' : (t.source === 'telegram_text' ? '✈️' : '💻');
+
+        return `
+          <div class="bg-surface-card hover:bg-surface-hover/80 border ${isHighPrio && !isDone ? 'border-rose-500/40 bg-rose-950/10' : 'border-surface-border'} rounded-xl p-3.5 sm:p-4 transition flex items-start gap-3 group">
+            
+            <!-- Checkbox de completado -->
+            <button onclick="toggleTask(${t.id})" class="mt-0.5 w-5 h-5 rounded-md border flex items-center justify-center transition flex-shrink-0 ${isDone ? 'bg-emerald-600 border-emerald-500 text-white' : 'border-slate-600 hover:border-blue-500 bg-slate-900'}">
+              ${isDone ? '✓' : ''}
+            </button>
+
+            <!-- Contenido Tarea -->
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center flex-wrap gap-1.5 mb-1">
+                <span class="text-[11px] font-mono text-slate-500">#${t.id}</span>
+                <span class="px-2 py-0.5 rounded text-[11px] font-medium border ${catInfo.badgeClass}">
+                  ${catInfo.icon} ${catInfo.name}
+                </span>
+                ${isHighPrio && !isDone ? '<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-rose-500 text-white animate-pulse">ALTA</span>' : ''}
+                ${reminderBadge}
+                <span class="text-[11px] text-slate-500" title="Origen: ${t.source}">${sourceIcon}</span>
+              </div>
+
+              <h4 class="text-sm font-medium ${isDone ? 'line-through text-slate-500' : 'text-slate-100'} break-words">
+                ${escapeHtml(t.title)}
+              </h4>
+
+              ${t.description ? `<p class="text-xs text-slate-400 mt-1 break-words">${escapeHtml(t.description)}</p>` : ''}
+            </div>
+
+            <!-- Acciones -->
+            <div class="flex items-center gap-1 opacity-80 group-hover:opacity-100 transition flex-shrink-0">
+              <button onclick="editTaskModal(${t.id})" title="Editar" class="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition">
+                ✏️
+              </button>
+              <button onclick="deleteTask(${t.id})" title="Eliminar" class="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition">
+                🗑️
+              </button>
+            </div>
+
+          </div>
+        `;
+      }).join('');
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    async function toggleTask(id) {
+      try {
+        const res = await fetch(`/api/tasks/${id}/toggle`, { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          showToast(`Tarea #${id} actualizada`);
+          await refreshAll();
+        }
+      } catch (e) {
+        showToast('Error al actualizar tarea', '❌');
+      }
+    }
+
+    async function deleteTask(id) {
+      if (!confirm(`¿Deseas eliminar la tarea #${id}?`)) return;
+      try {
+        const res = await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (data.success) {
+          showToast(`Tarea #${id} eliminada`, '🗑️');
+          await refreshAll();
+        }
+      } catch (e) {
+        showToast('Error al eliminar tarea', '❌');
+      }
+    }
+
+    function openTaskModal() {
+      document.getElementById('task-edit-id').value = '';
+      document.getElementById('modal-title').textContent = 'Nueva Tarea';
+      document.getElementById('task-form').reset();
+      document.getElementById('task-modal').classList.remove('hidden');
+    }
+
+    function closeTaskModal() {
+      document.getElementById('task-modal').classList.add('hidden');
+    }
+
+    function editTaskModal(id) {
+      const task = tasksList.find(t => t.id === id);
+      if (!task) return;
+      document.getElementById('task-edit-id').value = task.id;
+      document.getElementById('modal-title').textContent = `Editar Tarea #${task.id}`;
+      document.getElementById('form-title').value = task.title;
+      document.getElementById('form-category').value = task.category;
+      document.getElementById('form-priority').value = task.priority;
+      document.getElementById('form-description').value = task.description || '';
+      document.getElementById('form-due-date').value = task.due_date || '';
+      
+      if (task.reminder_at) {
+        document.getElementById('form-reminder-at').value = task.reminder_at.replace(' ', 'T').substring(0, 16);
+      } else {
+        document.getElementById('form-reminder-at').value = '';
+      }
+
+      document.getElementById('task-modal').classList.remove('hidden');
+    }
+
+    async function handleTaskSubmit(e) {
+      e.preventDefault();
+      const editId = document.getElementById('task-edit-id').value;
+      const title = document.getElementById('form-title').value.trim();
+      const category = document.getElementById('form-category').value;
+      const priority = document.getElementById('form-priority').value;
+      const description = document.getElementById('form-description').value.trim();
+      const due_date = document.getElementById('form-due-date').value || null;
+      let reminder_at = document.getElementById('form-reminder-at').value;
+
+      if (reminder_at) {
+        reminder_at = reminder_at.replace('T', ' ') + ':00';
+      } else {
+        reminder_at = null;
+      }
+
+      const payload = { title, category, priority, description, due_date, reminder_at };
+
+      try {
+        let res;
+        if (editId) {
+          res = await fetch(`/api/tasks/${editId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+        } else {
+          res = await fetch('/api/tasks', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+        }
+
+        const data = await res.json();
+        if (data.success) {
+          showToast(editId ? `Tarea #${editId} actualizada` : 'Tarea creada con éxito');
+          closeTaskModal();
+          await refreshAll();
+        } else {
+          alert(data.error || 'Ocurrió un error.');
+        }
+      } catch (err) {
+        alert('Error de conexión con el servidor.');
+      }
+    }
+
+    async function refreshAll() {
+      await Promise.all([fetchStats(), fetchBackupStatus(), loadTasks()]);
+    }
+
+    // Inicialización y Polling Automático para mantenerse sincronizado con Telegram
+    window.addEventListener('DOMContentLoaded', () => {
+      refreshAll();
+      // Refrescar cada 15 segundos para recibir recordatorios y mensajes nuevos de Telegram
+      setInterval(refreshAll, 15000);
+    });
+  </script>
+</body>
+</html>
