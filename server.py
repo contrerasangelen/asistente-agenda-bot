@@ -363,35 +363,39 @@ def parse_smart_text(text: str) -> Dict[str, Any]:
             target_dt = now + timedelta(hours=hrs)
             extracted_pattern = m.group(0)
 
-    # Helper para parsear horas en texto (ej. "8am", "8:30pm", "15:00", "3 pm", "a las 4")
+    # Helper para parsear horas en texto (ej. "8am", "8:30pm", "10 de la mañana", "3 de la tarde")
     def parse_time_match(time_str: str) -> Optional[Tuple[int, int]]:
-        # Busca HH:MM am/pm o HH am/pm o HH:MM
-        tm = re.search(r'(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?', time_str, re.IGNORECASE)
+        tm = re.search(r'(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.|de\s+la\s+mañana|en\s+la\s+mañana|de\s+la\s+tarde|en\s+la\s+tarde|de\s+la\s+noche|en\s+la\s+noche)?', time_str, re.IGNORECASE)
         if not tm:
             return None
         h = int(tm.group(1))
         minute = int(tm.group(2)) if tm.group(2) else 0
-        ampm = tm.group(3).lower() if tm.group(3) else None
+        mod = tm.group(3).lower() if tm.group(3) else ""
 
-        if ampm:
-            if "p" in ampm and h < 12:
+        if any(x in mod for x in ["tarde", "noche", "pm", "p.m."]):
+            if h < 12:
                 h += 12
-            elif "a" in ampm and h == 12:
+        elif any(x in mod for x in ["mañana", "am", "a.m."]):
+            if h == 12:
                 h = 0
+        elif not mod:
+            # Si no especifica y es entre 1 y 6, usualmente es tarde (ej. a las 3 = 15:00)
+            if 1 <= h <= 6:
+                h += 12
         return (h, minute)
 
     # Caso C: "hoy ... (hora)"
     if not target_dt:
-        m = re.search(r'\bhoy\s+(?:a\s+las\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)?)', lower)
-        if m:
+        m = re.search(r'\bhoy(?:\s+(?:a\s+las?|a\s+la|a)?\s*(\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.|de\s+la\s+mañana|de\s+la\s+tarde|de\s+la\s+noche)?))?', lower)
+        if m and m.group(1):
             t = parse_time_match(m.group(1))
             if t:
                 target_dt = now.replace(hour=t[0], minute=t[1], second=0, microsecond=0)
                 extracted_pattern = m.group(0)
 
-    # Caso D: "mañana ... (hora opcional)"
+    # Caso D: "mañana ... (hora opcional)" - Evitar que coincida con "de la mañana"
     if not target_dt:
-        m = re.search(r'\bmañana(?:\s+(?:a\s+las\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)?))?', lower)
+        m = re.search(r'(?<!de\sla\s)(?<!en\sla\s)\bmañana(?:\s+(?:a\s+las?|a\s+la|a)?\s*(\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.|de\s+la\s+mañana|de\s+la\s+tarde|de\s+la\s+noche)?))?', lower)
         if m:
             day = now + timedelta(days=1)
             time_part = m.group(1)
@@ -406,7 +410,7 @@ def parse_smart_text(text: str) -> Dict[str, Any]:
 
     # Caso E: "pasado mañana ... (hora opcional)"
     if not target_dt:
-        m = re.search(r'\bpasado\s+mañana(?:\s+(?:a\s+las\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)?))?', lower)
+        m = re.search(r'\bpasado\s+mañana(?:\s+(?:a\s+las?|a\s+la|a)?\s*(\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.|de\s+la\s+mañana|de\s+la\s+tarde|de\s+la\s+noche)?))?', lower)
         if m:
             day = now + timedelta(days=2)
             time_part = m.group(1)
@@ -417,6 +421,20 @@ def parse_smart_text(text: str) -> Dict[str, Any]:
             else:
                 target_dt = day.replace(hour=8, minute=0, second=0, microsecond=0)
             extracted_pattern = m.group(0)
+
+    # Caso F: Sin día específico pero con hora clara ("a las 10 de la mañana", "a 10 de la mañana", "a las 3pm", "a las 10:15")
+    if not target_dt:
+        m = re.search(r'(?:(?:alarma|recordar|recordatorio|para)?\s*(?:a\s+las?|a\s+la|a)\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.|de\s+la\s+mañana|en\s+la\s+mañana|de\s+la\s+tarde|en\s+la\s+tarde|de\s+la\s+noche|en\s+la\s+noche))', lower)
+        if m and m.group(1):
+            t = parse_time_match(m.group(1))
+            if t:
+                candidate = now.replace(hour=t[0], minute=t[1], second=0, microsecond=0)
+                # Si la hora ya pasó hoy (hace más de 1 minuto), programar para mañana
+                if candidate < now - timedelta(minutes=1):
+                    target_dt = candidate + timedelta(days=1)
+                else:
+                    target_dt = candidate
+                extracted_pattern = m.group(0)
 
     # Caso F: Días de la semana ("el lunes 9am", "el viernes a las 3pm")
     if not target_dt:
@@ -751,15 +769,40 @@ async def transcribe_voice_groq(voice_bytes: bytes) -> Tuple[bool, str]:
 # ==========================================
 # CLIENTE Y BOT DE TELEGRAM
 # ==========================================
-async def telegram_send_message(chat_id: str, text: str, parse_mode: str = "Markdown") -> bool:
+user_active_modes: Dict[str, str] = {}  # chat_id -> 'urgente' | 'idea' | 'sala' | 'tx'
+
+def get_main_keyboard() -> Dict[str, Any]:
+    return {
+        "keyboard": [
+            [{"text": "📅 Hoy"}, {"text": "📋 Ver Todo"}],
+            [{"text": "🔴 Urgente"}, {"text": "💡 Anotar Idea"}],
+            [{"text": "⚡ Sala Situacional"}, {"text": "🔌 Equipos / Tx"}],
+            [{"text": "⏱️ Probar Alarma (1m)"}, {"text": "📊 Resumen Diario"}]
+        ],
+        "resize_keyboard": True,
+        "is_persistent": True
+    }
+
+async def telegram_send_message(
+    chat_id: str,
+    text: str,
+    parse_mode: str = "Markdown",
+    reply_markup: Optional[Dict[str, Any]] = None
+) -> bool:
     if not TELEGRAM_BOT_TOKEN:
         return False
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {
+    payload: Dict[str, Any] = {
         "chat_id": chat_id,
         "text": text,
         "parse_mode": parse_mode
     }
+    if reply_markup is not None:
+        payload["reply_markup"] = reply_markup
+    else:
+        # Enviar teclado principal por defecto para tener siempre el menú accesible
+        payload["reply_markup"] = get_main_keyboard()
+
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(url, json=payload, timeout=15) as resp:
@@ -767,6 +810,59 @@ async def telegram_send_message(chat_id: str, text: str, parse_mode: str = "Mark
     except Exception as e:
         logger.error("Error enviando mensaje a Telegram: %s", e)
         return False
+
+async def telegram_answer_callback(callback_id: str, text: Optional[str] = None):
+    if not TELEGRAM_BOT_TOKEN:
+        return
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery"
+    payload: Dict[str, Any] = {"callback_query_id": callback_id}
+    if text:
+        payload["text"] = text
+    try:
+        async with aiohttp.ClientSession() as session:
+            await session.post(url, json=payload, timeout=10)
+    except Exception as e:
+        logger.error("Error respondiendo callback: %s", e)
+
+async def handle_telegram_callback(cq: Dict[str, Any]):
+    cq_id = cq.get("id", "")
+    from_user = cq.get("from", {})
+    chat_id = str(from_user.get("id", ""))
+    data = cq.get("data", "")
+
+    if TELEGRAM_CHAT_ID and chat_id != TELEGRAM_CHAT_ID:
+        await telegram_answer_callback(cq_id, "⛔ No autorizado")
+        return
+
+    if data.startswith("done:"):
+        task_id = int(data.split(":")[1])
+        updated = db_toggle_task(task_id)
+        st = "completada ✅" if updated and updated["status"] == "done" else "reabierta ⏳"
+        await telegram_answer_callback(cq_id, f"Tarea #{task_id} {st}")
+        await telegram_send_message(chat_id, f"🎯 Tarea *#{task_id}* marcada como {st}.")
+        return
+
+    if data.startswith("postpone:"):
+        parts = data.split(":")
+        task_id = int(parts[1])
+        add_minutes = int(parts[2]) if len(parts) > 2 else 30
+        new_dt = now_vet() + timedelta(minutes=add_minutes)
+        new_str = new_dt.strftime("%Y-%m-%d %H:%M:%S")
+        db_postpone_task(task_id, new_str, new_dt.strftime("%Y-%m-%d"))
+        await telegram_answer_callback(cq_id, f"Pospuesta {add_minutes} min")
+        await telegram_send_message(chat_id, f"⏰ Tarea *#{task_id}* pospuesta para: *{new_dt.strftime('%I:%M %p')}* VET.")
+        return
+
+    if data.startswith("del:"):
+        task_id = int(data.split(":")[1])
+        task = db_get_task(task_id)
+        title = task["title"] if task else f"#{task_id}"
+        db_delete_task(task_id)
+        await telegram_answer_callback(cq_id, f"Tarea #{task_id} eliminada")
+        await telegram_send_message(chat_id, f"🗑️ Tarea *#{task_id}* eliminada:\n_{title}_")
+        return
+
+    await telegram_answer_callback(cq_id)
 
 async def telegram_get_file_bytes(file_id: str) -> Optional[bytes]:
     if not TELEGRAM_BOT_TOKEN:
@@ -852,8 +948,49 @@ async def handle_telegram_message(msg: Dict[str, Any]):
     if not text:
         return
 
-    # 2. COMANDOS RÁPIDOS
+    # 2. BOTONES DEL MENÚ PRINCIPAL Y COMANDOS RÁPIDOS
     lower = text.lower()
+
+    if lower in ["📅 hoy", "hoy"]:
+        lower = "/hoy"
+    elif lower in ["📋 ver todo", "ver todo", "todos", "todo"]:
+        lower = "/todo"
+    elif lower in ["📊 resumen diario", "resumen diario", "resumen"]:
+        lower = "/resumen"
+    elif lower in ["⏱️ probar alarma (1m)", "probar alarma", "probar alarma 1m"]:
+        lower = "/probar_alarma"
+    elif lower in ["🔴 urgente", "urgente"]:
+        user_active_modes[chat_id] = "urgente"
+        await telegram_send_message(
+            chat_id,
+            "🔴 *Modo Urgente Activado*\n\n"
+            "Escribe o graba por voz tu tarea a continuación. Se guardará directamente con *Prioridad Alta* 🔴 (y con alarma si indicas hora)."
+        )
+        return
+    elif lower in ["💡 anotar idea", "anotar idea", "nueva idea"]:
+        user_active_modes[chat_id] = "idea"
+        await telegram_send_message(
+            chat_id,
+            "💡 *Modo Idea Activado*\n\n"
+            "Escribe o graba tu idea a continuación. Se guardará directamente en tu bandeja de *Ideas*."
+        )
+        return
+    elif lower in ["⚡ sala situacional", "sala situacional", "novedad sala"]:
+        user_active_modes[chat_id] = "sala"
+        await telegram_send_message(
+            chat_id,
+            "⚡ *Modo Sala Situacional Activado*\n\n"
+            "Escribe la novedad, disparo de circuito, carga en MW o maniobra."
+        )
+        return
+    elif lower in ["🔌 equipos / tx", "🔌 equipos/tx", "equipos / tx", "equipos/tx", "tx"]:
+        user_active_modes[chat_id] = "tx"
+        await telegram_send_message(
+            chat_id,
+            "🔌 *Modo Equipos / Transformadores Activado*\n\n"
+            "Escribe la inspección del transformador, nivel de aceite, DGA o equipo."
+        )
+        return
 
     if lower in ["/start", "/ayuda", "ayuda", "menu"]:
         help_msg = (
@@ -1008,6 +1145,26 @@ async def handle_telegram_message(msg: Dict[str, Any]):
         await telegram_send_message(chat_id, f"🗑️ Tarea *#{t_id}* eliminada:\n_{task['title']}_")
         return
 
+    if lower in ["/probar_alarma", "/alarma"]:
+        target = now_vet() + timedelta(minutes=1)
+        t_str = target.strftime("%Y-%m-%d %H:%M:%S")
+        t_id = db_add_task(
+            title="🔔 Prueba de alarma en 1 minuto",
+            category="Personal",
+            priority="Alta",
+            due_date=target.strftime("%Y-%m-%d"),
+            reminder_at=t_str,
+            source="telegram_text",
+            raw_text="/probar_alarma"
+        )
+        await telegram_send_message(
+            chat_id,
+            f"⏱️ *¡Alarma de prueba agendada (# {t_id})!*\n\n"
+            f"Sonará exactamente a las: *{target.strftime('%I:%M %p')}* (en 60 segundos).\n"
+            f"🔔 Te llegará una alerta automática aquí mismo."
+        )
+        return
+
     if lower == "/resumen":
         stats = db_get_stats()
         msg_res = (
@@ -1030,7 +1187,19 @@ async def handle_telegram_message(msg: Dict[str, Any]):
         return
 
     # 3. CAPTURA AL VUELO INTELIGENTE DE TEXTO
+    mode = user_active_modes.pop(chat_id, None)
     parsed = parse_smart_text(text)
+
+    # Aplicar modo activo si el usuario tocó un botón del menú previamente
+    if mode == "urgente":
+        parsed["priority"] = "Alta"
+    elif mode == "idea":
+        parsed["category"] = "Ideas"
+    elif mode == "sala":
+        parsed["category"] = "Sala"
+    elif mode == "tx":
+        parsed["category"] = "Equipos/Tx"
+
     task_id = db_add_task(
         title=parsed["title"],
         category=parsed["category"],
@@ -1046,7 +1215,15 @@ async def handle_telegram_message(msg: Dict[str, Any]):
 
     reminder_msg = ""
     if parsed["reminder_at"]:
-        reminder_msg = f"\n⏰ *Recordatorio programado:* `{parsed['reminder_at']}` (VET)"
+        try:
+            r_dt = datetime.strptime(parsed["reminder_at"], "%Y-%m-%d %H:%M:%S")
+            is_today = (r_dt.date() == now_vet().date())
+            day_label = "Hoy" if is_today else f"Para el {r_dt.strftime('%d/%m')}"
+            reminder_msg = f"\n⏰ *Alarma programada:* {day_label} a las *{r_dt.strftime('%I:%M %p')}* (VET)"
+        except Exception:
+            reminder_msg = f"\n⏰ *Alarma programada:* `{parsed['reminder_at']}` (VET)"
+    else:
+        reminder_msg = "\nℹ️ _(Sin fecha/hora de alarma detectada)_"
 
     prio_msg = " | 🔴 *Alta Prioridad*" if parsed["priority"] == "Alta" else ""
 
@@ -1054,10 +1231,20 @@ async def handle_telegram_message(msg: Dict[str, Any]):
         f"✅ *Guardado #{task_id}*\n"
         f"📌 *{parsed['title']}*\n"
         f"🏷️ *Categoría:* {cat_label}{prio_msg}"
-        f"{reminder_msg}\n\n"
-        f"Para completar: `/hecho {task_id}`"
+        f"{reminder_msg}"
     )
-    await telegram_send_message(chat_id, confirm_text)
+
+    # Botones de acción directa debajo del mensaje para tocar con un dedo
+    inline_actions = {
+        "inline_keyboard": [
+            [
+                {"text": "✅ Hecho", "callback_data": f"done:{task_id}"},
+                {"text": "⏰ +30 min", "callback_data": f"postpone:{task_id}:30"},
+                {"text": "🗑️ Borrar", "callback_data": f"del:{task_id}"}
+            ]
+        ]
+    }
+    await telegram_send_message(chat_id, confirm_text, reply_markup=inline_actions)
 
 # ==========================================
 # CICLO DE POLLING DE TELEGRAM
@@ -1088,6 +1275,11 @@ async def telegram_polling_loop():
                                     await handle_telegram_message(update["message"])
                                 except Exception as e:
                                     logger.error("Error manejando mensaje de Telegram: %s", e)
+                            elif "callback_query" in update:
+                                try:
+                                    await handle_telegram_callback(update["callback_query"])
+                                except Exception as e:
+                                    logger.error("Error manejando callback query: %s", e)
                     else:
                         err_text = await resp.text()
                         logger.error("Error en getUpdates (%d): %s", resp.status, err_text)
@@ -1117,13 +1309,20 @@ async def background_scheduler():
             for r in due_reminders:
                 if TELEGRAM_CHAT_ID:
                     alert_msg = (
-                        f"⏰ *¡RECORDATORIO PENDIENTE! (# {r['id']})*\n\n"
+                        f"⏰ *¡ALERTA DE RECORDATORIO! (# {r['id']})*\n\n"
                         f"📌 *{r['title']}*\n"
-                        f"🏷️ Categoría: *{r['category']}* | Prioridad: *{r['priority']}*\n\n"
-                        f"Para completar: `/hecho {r['id']}`\n"
-                        f"Para posponer: `/posponer {r['id']} en 30 minutos`"
+                        f"🏷️ Categoría: *{r['category']}* | Prioridad: *{r['priority']}*"
                     )
-                    await telegram_send_message(TELEGRAM_CHAT_ID, alert_msg)
+                    alert_buttons = {
+                        "inline_keyboard": [
+                            [
+                                {"text": "✅ Completado", "callback_data": f"done:{r['id']}"},
+                                {"text": "⏰ +15 min", "callback_data": f"postpone:{r['id']}:15"},
+                                {"text": "⏰ +1 hora", "callback_data": f"postpone:{r['id']}:60"}
+                            ]
+                        ]
+                    }
+                    await telegram_send_message(TELEGRAM_CHAT_ID, alert_msg, reply_markup=alert_buttons)
                 db_mark_reminder_sent(r["id"])
 
             # 2. Resumen Matutino (06:00 AM VET)
