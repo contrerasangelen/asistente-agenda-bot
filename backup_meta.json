@@ -1,12 +1,12 @@
 {
-  "timestamp_vet": "2026-11-23 20:57:32",
+  "timestamp_vet": "2026-11-24 06:39:41",
   "size_bytes": 20480,
   "stats": {
-    "pendientes_hoy": 2,
+    "pendientes_hoy": 1,
     "atrasados": 0,
     "ideas": 0,
-    "completados_hoy": 1,
-    "total_pendientes": 2,
-    "hora_vet": "23/11/2026 08:57 PM"
+    "completados_hoy": 0,
+    "total_pendientes": 3,
+    "hora_vet": "24/11/2026 06:39 AM"
   }
 }
